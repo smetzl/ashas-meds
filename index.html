@@ -186,7 +186,7 @@
 
 <script>
   // ── CONFIG ─────────────────────────────────────────────────────────
-  const SCRIPT_URL = localStorage.getItem("ashaScriptUrl") || "https://script.google.com/macros/s/AKfycbz-bKW2CDrOVSOQASDZ39K7smoGKTIPBZSNlM8L6AXeH2UGCmUiEsQEgsO71rvissrP/exec";
+  const SCRIPT_URL = localStorage.getItem("ashaScriptUrl") || "https://script.google.com/macros/s/AKfycbxW_B6kJFv8RzaYqO2GSFE4joCoR8-odXDvf0JNgO-LukZG0pX2AN7DM024BQqsDVn7/exec";
 
   const MEDS = [
     { name: "Famotidine",     dose: "5mg" },
@@ -201,6 +201,7 @@
 
   let selectedWho = NAMES[0];
   let sessionLog  = [];
+  let sheetEntries = [];
 
   // ── INIT ───────────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
@@ -208,6 +209,7 @@
     buildMeds();
     buildWhoButtons();
     if (!SCRIPT_URL) document.getElementById("configNote").style.display = "block";
+    fetchRecentEntries();
   });
 
   function setDateTime() {
@@ -303,6 +305,7 @@
       addToLog(date, get12hr(), document.getElementById("medSelect").value, dose, selectedWho);
       document.getElementById("notesInput").value = "";
       resetTime();
+      setTimeout(fetchRecentEntries, 1500);
     } catch(e) {
       toast("❌ Failed. Check connection.", "error");
     }
@@ -313,11 +316,44 @@
   // ── SESSION LOG ────────────────────────────────────────────────────
   function addToLog(date, time, med, dose, who) {
     sessionLog.unshift({ date, time, med, dose, who });
-    document.getElementById("logList").innerHTML = sessionLog.slice(0,5).map(e => `
+    renderLog();
+  }
+
+  function renderLog() {
+    // Show session entries first, then fill up to 3 with sheet entries (deduplicated by showing sheet only if no session entries exist or pad)
+    const combined = sessionLog.length > 0 ? sessionLog.slice(0, 3) : sheetEntries.slice(0, 3);
+    if (combined.length === 0) {
+      document.getElementById("logList").innerHTML = `<p style="font-size:13px;color:var(--light-mid);text-align:center;padding:12px 0;">No entries yet</p>`;
+      return;
+    }
+    document.getElementById("logList").innerHTML = combined.map(e => `
       <div class="log-item">
         <div><div class="log-med">${e.med} · ${e.dose}</div><div class="log-meta">Given by ${e.who}</div></div>
         <div><div class="log-time">${e.time}</div><div class="log-date">${e.date}</div></div>
       </div>`).join("");
+  }
+
+  // ── FETCH RECENT FROM SHEET ────────────────────────────────────────
+  async function fetchRecentEntries() {
+    const url = localStorage.getItem("ashaScriptUrl") || SCRIPT_URL;
+    if (!url) return;
+    try {
+      const res = await fetch(url + "?action=getRecent&n=3");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        sheetEntries = data.map(r => ({
+          date: r.date || "",
+          time: r.time || "",
+          med:  r.medication || "",
+          dose: r.dose || "",
+          who:  r.givenBy || ""
+        }));
+        if (sessionLog.length === 0) renderLog();
+      }
+    } catch(e) {
+      // silently fail — sheet fetch is best-effort
+    }
   }
 
   // ── TOAST ──────────────────────────────────────────────────────────
@@ -337,3 +373,4 @@
 </script>
 </body>
 </html>
+
